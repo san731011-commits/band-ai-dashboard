@@ -9,7 +9,7 @@ cp .worker.env.example .worker.env
 ```
 2. `.worker.env`에 `GITHUB_TOKEN` 입력
 3. Codex 실행 방식 확인
-- 기본: `CODEX_COMMAND=codex`, `CODEX_PROMPT_MODE=arg`
+- 기본: `CODEX_COMMAND=codex exec`, `CODEX_PROMPT_MODE=arg`
 
 ## 수동 1회 실행 테스트
 ```bash

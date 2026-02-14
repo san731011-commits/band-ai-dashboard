@@ -17,7 +17,7 @@ cp .worker.env.example .worker.env
 필수 항목:
 ```env
 BRIDGE_TOKEN=long_random_token_here
-CODEX_COMMAND=codex
+CODEX_COMMAND=codex exec
 CODEX_PROMPT_MODE=arg
 CODEX_TIMEOUT_SEC=1800
 ```

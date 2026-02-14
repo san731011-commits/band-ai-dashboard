@@ -115,7 +115,15 @@ class CodexRunner:
         else:
             raise RuntimeError("CODEX_PROMPT_MODE must be 'arg' or 'stdin'")
 
-        return proc.returncode, proc.stdout, proc.stderr
+        out = proc.stdout or ""
+        err = proc.stderr or ""
+        if proc.returncode != 0 and not out.strip() and not err.strip():
+            err = (
+                "codex exited with non-zero status and no output. "
+                f"command={shlex.join(cmd)} cwd={self.repo_path}"
+            )
+
+        return proc.returncode, out, err
 
 
 def load_env_file(path: pathlib.Path) -> None:
@@ -285,7 +293,7 @@ def main() -> int:
     max_prompt_chars = int(os.environ.get("BRIDGE_MAX_PROMPT_CHARS", "12000"))
     max_output_chars = int(os.environ.get("BRIDGE_MAX_OUTPUT_CHARS", "30000"))
 
-    codex_command = os.environ.get("CODEX_COMMAND", "codex")
+    codex_command = os.environ.get("CODEX_COMMAND", "codex exec")
     codex_prompt_mode = os.environ.get("CODEX_PROMPT_MODE", "arg")
     codex_timeout_sec = int(os.environ.get("CODEX_TIMEOUT_SEC", "1800"))
 
@@ -301,6 +309,7 @@ def main() -> int:
     server = ThreadingHTTPServer((args.host, args.port), make_handler(store, token, max_prompt_chars))
     print(f"[{now_iso()}] Codex HTTP bridge running on http://{args.host}:{args.port}")
     print(f"[{now_iso()}] repo_path={repo_path}")
+    print(f"[{now_iso()}] codex_command={codex_command}")
     print(f"[{now_iso()}] prompt_mode={codex_prompt_mode}, timeout={codex_timeout_sec}s")
     server.serve_forever()
 

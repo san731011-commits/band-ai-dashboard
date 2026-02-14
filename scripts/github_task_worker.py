@@ -166,7 +166,7 @@ def commit_and_push(repo_path: pathlib.Path, branch: str, issue_number: int) -> 
 
 
 def execute_codex(prompt: str, repo_path: pathlib.Path, issue_number: int, run_dir: pathlib.Path) -> tuple[int, pathlib.Path]:
-    codex_cmd = os.environ.get("CODEX_COMMAND", "codex").strip()
+    codex_cmd = os.environ.get("CODEX_COMMAND", "codex exec").strip()
     prompt_mode = os.environ.get("CODEX_PROMPT_MODE", "arg").strip().lower()
     timeout_sec = int(os.environ.get("CODEX_TIMEOUT_SEC", "1800"))
 
