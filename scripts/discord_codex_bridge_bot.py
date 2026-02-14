@@ -145,7 +145,9 @@ class CodexDiscordBot(discord.Client):
                 await interaction.followup.send(
                     f"접수 완료\n- job_id: `{job_id}`\n- 상태 확인: `/status job_id:{job_id}`"
                 )
-                self.loop.create_task(self._watch_job_and_report(interaction, job_id))
+                # Don't rely on interaction followups for long-running background notifications.
+                # Interaction tokens can expire; channel messages are more reliable.
+                asyncio.create_task(self._watch_job_and_report(interaction, job_id))
             except Exception as exc:  # noqa: BLE001
                 await interaction.followup.send(f"작업 접수 실패: `{exc}`")
 
@@ -204,27 +206,54 @@ class CodexDiscordBot(discord.Client):
         return "작업 완료\n" + "\n".join(lines)
 
     async def _watch_job_and_report(self, interaction: discord.Interaction, job_id: str) -> None:
-        deadline = asyncio.get_event_loop().time() + self.settings.max_wait_sec
-        last_status = "queued"
-        while asyncio.get_event_loop().time() < deadline:
+        """Poll the bridge and report completion back to the channel.
+
+        We intentionally prefer channel messages over interaction followups because
+        interaction tokens can expire or become invalid after reconnects.
+        """
+
+        async def send_to_channel(message: str) -> None:
             try:
-                job = await asyncio.to_thread(self.bridge.get_job, job_id)
-            except Exception as exc:  # noqa: BLE001
-                await interaction.followup.send(f"job `{job_id}` 조회 오류: `{exc}`")
-                return
+                channel = interaction.channel
+                if channel is None and interaction.channel_id:
+                    channel = await self.fetch_channel(interaction.channel_id)
+                if channel is not None and hasattr(channel, "send"):
+                    await channel.send(message)
+                    return
+            except Exception:  # noqa: BLE001
+                pass
+            # Best-effort fallback (may fail if interaction token expired).
+            try:
+                await interaction.followup.send(message)
+            except Exception:  # noqa: BLE001
+                print(f"[watch] failed to send message for job {job_id}", file=sys.stderr)
 
-            status = str(job.get("status", "unknown"))
-            if status in {"succeeded", "failed"}:
-                await interaction.followup.send(
-                    f"<@{interaction.user.id}> job `{job_id}` 완료\n{self._format_status(job)}"
-                )
-                return
-            last_status = status
-            await asyncio.sleep(self.settings.poll_interval_sec)
+        try:
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + self.settings.max_wait_sec
+            last_status = "queued"
+            while loop.time() < deadline:
+                try:
+                    job = await asyncio.to_thread(self.bridge.get_job, job_id)
+                except Exception as exc:  # noqa: BLE001
+                    await send_to_channel(f"job `{job_id}` 조회 오류: `{exc}`")
+                    return
 
-        await interaction.followup.send(
-            f"job `{job_id}` 장기 실행 중(`{last_status}`). `/status job_id:{job_id}`로 계속 조회해줘."
-        )
+                status = str(job.get("status", "unknown"))
+                if status in {"succeeded", "failed"}:
+                    await send_to_channel(
+                        f"<@{interaction.user.id}> job `{job_id}` 완료\n{self._format_status(job)}"
+                    )
+                    return
+                last_status = status
+                await asyncio.sleep(self.settings.poll_interval_sec)
+
+            await send_to_channel(
+                f"job `{job_id}` 장기 실행 중(`{last_status}`). `/status job_id:{job_id}`로 계속 조회해줘."
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Never let background task exceptions disappear silently.
+            print(f"[watch] unexpected error job={job_id}: {exc}", file=sys.stderr)
 
 
 def parse_args() -> argparse.Namespace:
